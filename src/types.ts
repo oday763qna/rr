@@ -1,0 +1,10 @@
+export type TaskStatus='todo'|'doing'|'done';
+export type Subtask={id:string,title:string,done:boolean,color?:string,icon?:string,children?:Subtask[]};
+export type Task={id:string,ownerUid?:string,title:string,description:string,status:TaskStatus,priority:'low'|'medium'|'high',dueDate:string,projectId:string,kind:'task'|'study'|'exam',subtasks:Subtask[],pomodoroMinutes:number,pomodorosCompleted:number,color?:string,icon?:string,relatedTaskIds?:string[],createdAt:number,updatedAt:number,completedAt?:number};
+export type Note={id:string,title:string,body:string,updatedAt:number,color?:string,taskId?:string};
+export type Project={id:string,name:string,color:string,createdAt:number};
+export type Habit={id:string,name:string,color:string,days:string[],createdAt:number};
+export type HabitLog={id:string,habitId:string,date:string};
+export type Settings={id:'main',name:string,language:'en'|'ar',theme:'light'|'dark'|'system',onboarded:boolean,focusMinutes:number,shortBreak:number,longBreak:number,notifications:boolean};
+export type FocusSession={id:string,date:string,minutes:number,taskId?:string};
+export type Page='home'|'tasks'|'planner'|'notes'|'projects'|'habits'|'focus'|'insights'|'settings';
