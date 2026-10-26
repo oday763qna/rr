@@ -21,3 +21,7 @@ html[data-theme=dark]{--electric:#83aaff;--electric-soft:#23314b}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 
 .google-signin{width:100%;justify-content:center;gap:10px}.auth-divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:11px}.auth-divider:before,.auth-divider:after{content:'';height:1px;flex:1;background:var(--line)}
+@media(max-width:720px){
+  input:not([type=checkbox]):not([type=radio]),textarea,select{font-size:16px!important}
+}
+.focus-device-note{max-width:520px;margin:14px auto 0;text-align:center;line-height:1.65}
