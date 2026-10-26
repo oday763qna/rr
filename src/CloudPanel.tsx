@@ -1,79 +1,36 @@
 import {useEffect,useState} from 'react';
 import type {FormEvent} from 'react';
-import {Cloud,LogOut} from 'lucide-react';
+import {Cloud,LogOut,ShieldCheck,UserRound,Trash2,Mail,CalendarDays,KeyRound} from 'lucide-react';
+import type {User} from '@supabase/supabase-js';
 import {supabase} from './supabase';
 
-export default function CloudPanel({language,guestCount,onMigrate}:{language:'en'|'ar';guestCount:number;onMigrate:()=>Promise<void>}){
- const [user,setUser]=useState<{id:string;email?:string} | null>(null),[mode,setMode]=useState<'login'|'register'>('login'),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[verificationEmail,setVerificationEmail]=useState('');
+const PENDING_EMAIL_KEY='od-tasks-pending-confirmation';
+type Props={language:'en'|'ar';guestCount:number;onMigrate:()=>Promise<void>;onDeleteLocalData:(userId:string)=>Promise<void>};
+export default function CloudPanel({language,guestCount,onMigrate,onDeleteLocalData}:Props){
+ const [user,setUser]=useState<User|null>(null),[mode,setMode]=useState<'login'|'register'|'reset'>('login'),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[email,setEmail]=useState(()=>localStorage.getItem(PENDING_EMAIL_KEY)||''),[password,setPassword]=useState(''),[deleteOpen,setDeleteOpen]=useState(false),[deleteEmail,setDeleteEmail]=useState('');
  const ar=language==='ar';
- useEffect(()=>{
-  if(!supabase)return;
-  let active=true;
-  const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>setUser(session?.user?{id:session.user.id,email:session.user.email}:null));
-  void supabase.auth.getSession().then(({data})=>{if(active)setUser(data.session?.user?{id:data.session.user.id,email:data.session.user.email}:null);});
-  return()=>{active=false;subscription.unsubscribe();};
- },[]);
- const submitEmail=async(e:FormEvent<HTMLFormElement>)=>{
-  e.preventDefault();if(!supabase)return;
-  const form=new FormData(e.currentTarget),email=String(form.get('email')).trim(),password=String(form.get('password'));
-  setBusy(true);setMessage('');
-  try{
-   if(mode==='register'){
-    const {data,error}=await supabase.auth.signUp({email,password,options:{emailRedirectTo:`${window.location.origin}${import.meta.env.BASE_URL}`}});if(error)throw error;
-    if(data.session){setVerificationEmail('');setMessage(ar?'تم إنشاء الحساب وتسجيل الدخول.':'Account created and signed in.');}
-    else {setVerificationEmail(email);setMessage(ar?'تم إنشاء الحساب. أكّد بريدك الإلكتروني من رسالة Supabase ثم سجّل الدخول.':'Account created. Confirm your email using the Supabase message, then sign in.');}
-   }else{
-    const {error}=await supabase.auth.signInWithPassword({email,password});if(error){if(error.code==='email_not_confirmed')setVerificationEmail(email);throw error;}
-    setVerificationEmail('');setMessage(ar?'تم تسجيل الدخول بنجاح.':'Signed in successfully.');
-   }
-  }catch(error){setMessage(authErrorMessage(error,ar));}
-  finally{setBusy(false);}
- };
- const resendConfirmation=async()=>{if(!supabase||!verificationEmail)return;setBusy(true);setMessage('');try{const {error}=await supabase.auth.resend({type:'signup',email:verificationEmail,options:{emailRedirectTo:`${window.location.origin}${import.meta.env.BASE_URL}`}});if(error)throw error;setMessage(ar?'أرسلنا رسالة تأكيد جديدة. افحص الوارد والرسائل غير المرغوبة.':'A new confirmation email was sent. Check your inbox and spam folder.');}catch(error){setMessage(authErrorMessage(error,ar));}finally{setBusy(false);}};
- const signInWithGoogle=async()=>{if(!supabase)return;setBusy(true);setMessage('');try{const {error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:`${window.location.origin}${import.meta.env.BASE_URL}`,queryParams:{prompt:'select_account'}}});if(error)throw error;}catch(error){setBusy(false);setMessage(oauthErrorMessage(error,ar));}};
- const migrate=async()=>{setBusy(true);setMessage('');try{await onMigrate();setMessage(ar?'تم نقل المهام المحلية إلى حسابك.':'Local tasks were linked to your account.');}catch(error){setMessage(error instanceof Error?error.message:(ar?'تعذر نقل المهام.':'Could not link local tasks.'));}finally{setBusy(false);}};
- const signOut=async()=>{if(!supabase)return;setBusy(true);try{const {error}=await supabase.auth.signOut();if(error)throw error;setMessage(ar?'تم تسجيل الخروج.':'Signed out.');}catch(error){setMessage(oauthErrorMessage(error,ar));}finally{setBusy(false);}};
- return <section className="settings-card"><h3><Cloud size={17}/> {ar?'حساب Supabase':'Supabase account'}</h3>
-  {!supabase?<p>{ar?'إعدادات Supabase غير موجودة.':'Supabase is not configured.'}</p>:user?<>
-   <p>{ar?`مسجل الدخول: ${user.email??user.id}`:`Signed in: ${user.email??user.id}`}</p>
-   {guestCount>0&&<button className="secondary" disabled={busy} onClick={()=>void migrate()}>{ar?`نقل ${guestCount} مهمة محلية إلى هذا الحساب`:`Link ${guestCount} local tasks to this account`}</button>}
-   <button className="secondary" disabled={busy} onClick={()=>void signOut()}><LogOut size={16}/>{ar?'تسجيل الخروج':'Sign out'}</button>
-  </>:<>
-   <p>{ar?'سجّل بالبريد وكلمة المرور، أو استخدم Google.':'Sign in with email and password, or continue with Google.'}</p>
-   <form className="form-grid" onSubmit={e=>void submitEmail(e)}>
-    <label>{ar?'البريد الإلكتروني':'Email'}<input name="email" type="email" autoComplete="email" required/></label>
-    <label>{ar?'كلمة المرور':'Password'}<input name="password" type="password" minLength={6} autoComplete={mode==='login'?'current-password':'new-password'} required/></label>
-    <button className="primary" disabled={busy}>{busy?(ar?'جارٍ التنفيذ…':'Working…'):mode==='login'?(ar?'تسجيل الدخول بالبريد':'Sign in with email'):(ar?'إنشاء حساب بالبريد':'Create email account')}</button>
-   </form>
-   <button className="text-button" disabled={busy} onClick={()=>{setMessage('');setMode(mode==='login'?'register':'login');}}>{mode==='login'?(ar?'إنشاء حساب جديد':'Create an account'):(ar?'لدي حساب بالفعل':'I already have an account')}</button>
-   <div className="auth-divider"><span>{ar?'أو':'or'}</span></div>
-   <button className="secondary google-signin" disabled={busy} onClick={()=>void signInWithGoogle()}>
-    <svg aria-hidden="true" viewBox="0 0 48 48" width="20" height="20"><path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.9 6.1-15z"/><path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.6-5.1c-1.8 1.2-4 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44z"/><path fill="#FBBC05" d="M12.6 27.7a12 12 0 0 1 0-7.4V15H5.8a20 20 0 0 0 0 18z"/><path fill="#EA4335" d="M24 11.9c3 0 5.7 1 7.8 3.1l5.8-5.8C34.1 5.8 29.5 4 24 4A20 20 0 0 0 5.8 15l6.8 5.3c1.6-4.8 6.1-8.4 11.4-8.4z"/></svg>
-    {busy?(ar?'جارٍ التحويل…':'Connecting…'):(ar?'المتابعة باستخدام Google':'Continue with Google')}
-   </button>
-   {mode==='register'&&<small className="muted">{ar?'قد يتطلب الحساب الجديد تأكيد البريد الإلكتروني.':'New accounts may need email confirmation.'}</small>}
-  </>}
-  {message&&<p role="status">{message}</p>}{verificationEmail&&!user&&<button className="text-button" disabled={busy} onClick={()=>void resendConfirmation()}>{ar?'إعادة إرسال رسالة التأكيد':'Resend confirmation email'}</button>}
+ useEffect(()=>{if(!supabase)return;let active=true;const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{setUser(session?.user??null);if(session?.user){localStorage.removeItem(PENDING_EMAIL_KEY);setEmail(session.user.email||'');}});void supabase.auth.getSession().then(({data})=>{if(active){setUser(data.session?.user??null);if(data.session?.user){localStorage.removeItem(PENDING_EMAIL_KEY);setEmail(data.session.user.email||'');}}});return()=>{active=false;subscription.unsubscribe();};},[]);
+ const submit=async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();if(!supabase)return;setBusy(true);setMessage('');try{if(mode==='register'){const {data,error}=await supabase.auth.signUp({email:email.trim(),password,options:{emailRedirectTo:`${window.location.origin}${import.meta.env.BASE_URL}`}});if(error)throw error;if(data.session){localStorage.removeItem(PENDING_EMAIL_KEY);setMessage(ar?'تم إنشاء الحساب وتسجيل الدخول بنجاح.':'Your account is ready and you are signed in.');}else{localStorage.setItem(PENDING_EMAIL_KEY,email.trim());setMode('login');setPassword('');setMessage(ar?'تم إنشاء الحساب. افتح رسالة التأكيد من هذا الجهاز والمتصفح؛ وإذا لم يتم تسجيل دخولك تلقائيًا، أدخل كلمة المرور هنا بعد التأكيد.':'Account created. Open the confirmation email on this device and browser. If you are not signed in automatically, enter your password here after confirming.');}}
+ else if(mode==='reset'){const {error}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:`${window.location.origin}${import.meta.env.BASE_URL}`});if(error)throw error;setMessage(ar?'أرسلنا رابط استعادة كلمة المرور إلى بريدك.':'Password reset link sent to your email.');}
+ else{const {error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)throw error;localStorage.removeItem(PENDING_EMAIL_KEY);setMessage(ar?'تم تسجيل الدخول بنجاح.':'Signed in successfully.');}}
+ catch(err){setMessage(authError(err,ar));}finally{setBusy(false);}};
+ const resend=async()=>{if(!supabase||!email.trim())return;setBusy(true);try{const {error}=await supabase.auth.resend({type:'signup',email:email.trim(),options:{emailRedirectTo:`${window.location.origin}${import.meta.env.BASE_URL}`}});if(error)throw error;setMessage(ar?'أرسلنا رسالة تأكيد جديدة. افحص الوارد والرسائل غير المرغوبة.':'A new confirmation email was sent. Check your inbox and spam folder.');}catch(err){setMessage(authError(err,ar));}finally{setBusy(false);}};
+ const signOut=async()=>{if(!supabase)return;setBusy(true);try{const {error}=await supabase.auth.signOut();if(error)throw error;setMessage(ar?'تم تسجيل الخروج بأمان.':'You have been signed out securely.');}catch(err){setMessage(authError(err,ar));}finally{setBusy(false);}};
+ const migrate=async()=>{setBusy(true);try{await onMigrate();setMessage(ar?'تم ربط مهامك المحلية بهذا الحساب.':'Your local tasks are now linked to this account.');}catch(err){setMessage(err instanceof Error?err.message:'Could not link local tasks.');}finally{setBusy(false);}};
+ const deleteAccount=async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();if(!supabase||!user?.email)return;setBusy(true);setMessage('');try{const {error}=await supabase.auth.signInWithPassword({email:user.email,password});if(error)throw new Error(ar?'كلمة المرور غير صحيحة؛ لم نحذف الحساب.':'Password is incorrect; the account was not deleted.');const {data:{session}}=await supabase.auth.getSession();if(!session)throw new Error(ar?'انتهت الجلسة. سجّل الدخول مجددًا.':'Session expired. Please sign in again.');const response=await fetch('/api/account/delete',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({confirmationEmail:deleteEmail.trim(),confirmationText:'DELETE'})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||(ar?'تعذر حذف الحساب.':'Could not delete account.'));await onDeleteLocalData(user.id);await supabase.auth.signOut();setDeleteOpen(false);setDeleteEmail('');setPassword('');setMessage(ar?'تم حذف الحساب وبيانات المهام السحابية.':'Account and cloud task data deleted.');}catch(err){setMessage(authError(err,ar));}finally{setBusy(false);}};
+ return <section className="settings-card account-card"><div className="account-heading"><span className="account-mark"><Cloud size={20}/></span><div><h3>{ar?'الحساب والنسخ السحابي':'Account & cloud sync'}</h3><p>{ar?'إدارة حسابك وبيانات المهام بأمان':'Manage your account and task data securely'}</p></div><ShieldCheck className="account-shield" size={19}/></div>
+ {!supabase?<div className="account-empty"><p>{ar?'إعدادات Supabase غير مضافة لهذا الإصدار.':'Supabase is not configured for this deployment.'}</p></div>:user?<>
+  <div className="account-profile"><span className="profile-avatar"><UserRound size={22}/></span><div className="profile-main"><b>{user.user_metadata?.full_name||user.user_metadata?.name||(ar?'حساب OD Tasks':'OD Tasks account')}</b><span>{user.email||user.id}</span></div><span className="account-status"><i/> {ar?'نشط':'Active'}</span></div>
+  <div className="account-facts"><div><Mail size={15}/><span>{ar?'حالة البريد':'Email status'}<b>{user.email_confirmed_at?(ar?'تم التأكيد':'Confirmed'):(ar?'بانتظار التأكيد':'Pending confirmation')}</b></span></div><div><CalendarDays size={15}/><span>{ar?'تاريخ إنشاء الحساب':'Account created'}<b>{user.created_at?new Date(user.created_at).toLocaleDateString(ar?'ar':'en',{year:'numeric',month:'long',day:'numeric'}):(ar?'غير متاح':'Unavailable')}</b></span></div><div><KeyRound size={15}/><span>{ar?'طريقة الدخول':'Sign-in method'}<b>{ar?'البريد الإلكتروني':'Email and password'}</b></span></div></div>
+  {guestCount>0&&<button className="secondary account-action" disabled={busy} onClick={()=>void migrate()}>{ar?`ربط ${guestCount} مهمة محلية بالحساب`:`Link ${guestCount} local tasks to this account`}</button>}
+  <div className="account-actions"><button className="secondary account-action" disabled={busy} onClick={()=>void signOut()}><LogOut size={16}/>{ar?'تسجيل الخروج':'Sign out'}</button><button className="account-delete-link" disabled={busy} onClick={()=>{setDeleteOpen(x=>!x);setDeleteEmail('');setPassword('');}}><Trash2 size={15}/>{ar?'حذف الحساب':'Delete account'}</button></div>
+  {deleteOpen&&<form className="delete-account-form" onSubmit={e=>void deleteAccount(e)}><b>{ar?'تأكيد حذف الحساب نهائيًا':'Confirm permanent account deletion'}</b><p>{ar?'سيُحذف الحساب ومهامك السحابية نهائيًا. أدخل كلمة المرور والبريد نفسه للمتابعة.':'Your account and cloud tasks will be permanently deleted. Enter your password and the same email address to continue.'}</p><label>{ar?'كلمة المرور الحالية':'Current password'}<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label><label>{ar?'اكتب بريد الحساب للتأكيد':'Type your account email to confirm'}<input type="email" value={deleteEmail} onChange={e=>setDeleteEmail(e.target.value)} required/></label><button className="danger-button" disabled={busy||deleteEmail.trim().toLowerCase()!==user.email?.toLowerCase()}><Trash2 size={15}/>{busy?(ar?'جارٍ الحذف…':'Deleting…'):(ar?'حذف الحساب نهائيًا':'Permanently delete account')}</button></form>}
+ </>:<>
+  <p className="account-intro">{ar?'أنشئ حسابًا أو سجّل الدخول ببريدك الإلكتروني بأمان.':'Create an account or sign in securely with your email.'}</p>
+  <form className="form-grid account-form" onSubmit={e=>void submit(e)}><label>{ar?'البريد الإلكتروني':'Email address'}<input name="email" type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label>{mode!=='reset'&&<label>{ar?'كلمة المرور':'Password'}<input name="password" type="password" minLength={6} autoComplete={mode==='login'?'current-password':'new-password'} required value={password} onChange={e=>setPassword(e.target.value)}/></label>}<button className="primary account-submit" disabled={busy}>{busy?(ar?'جارٍ التنفيذ…':'Working…'):mode==='login'?(ar?'تسجيل الدخول':'Sign in'):mode==='register'?(ar?'إنشاء حساب':'Create account'):(ar?'إرسال رابط الاستعادة':'Send reset link')}</button></form>
+  <div className="account-auth-links">{mode==='login'&&<button className="text-button" disabled={busy} onClick={()=>{setMode('reset');setMessage('');}}>{ar?'نسيت كلمة المرور؟':'Forgot password?'}</button>}<button className="text-button" disabled={busy} onClick={()=>{setMode(mode==='register'?'login':'register');setMessage('');}}>{mode==='register'?(ar?'لدي حساب بالفعل':'I already have an account'):(ar?'إنشاء حساب جديد':'Create a new account')}</button></div>
+  {localStorage.getItem(PENDING_EMAIL_KEY)&&<button className="text-button" disabled={busy} onClick={()=>void resend()}>{ar?'إعادة إرسال رسالة التأكيد':'Resend confirmation email'}</button>}
+ </>}{message&&<p className="account-message" role="status">{message}</p>}
  </section>;
 }
-
-function authErrorMessage(error:unknown,ar:boolean){
- const code=error&&typeof error==='object'&&'code'in error?String((error as {code?:unknown}).code??''):'';
- const message=error instanceof Error?error.message:'';
- if(code==='invalid_credentials')return ar?'البريد الإلكتروني أو كلمة المرور غير صحيحة.':'Email or password is incorrect.';
- if(code==='email_not_confirmed')return ar?'أكّد بريدك الإلكتروني أولاً، ثم سجّل الدخول.':'Confirm your email first, then sign in.';
- if(code==='weak_password')return ar?'كلمة المرور ضعيفة. اختر كلمة مرور أقوى.':'Password is too weak. Choose a stronger password.';
- if(code==='user_already_exists')return ar?'جرّب تسجيل الدخول بهذا البريد أو استخدم بريدًا آخر.':'Try signing in with this email or use another email.';
- if(code==='over_email_send_rate_limit'||/rate limit/i.test(message))return ar?'طلبات البريد كثيرة. انتظر قليلًا ثم حاول مجددًا.':'Too many email requests. Wait a while, then try again.';
- if(/email address not authorized/i.test(message))return ar?'إرسال البريد التجريبي محدود بعناوين فريق Supabase. أضف SMTP مخصصًا لإرسال الرسائل للمستخدمين.':'Supabase test email only allows team addresses. Configure custom SMTP to send to users.';
- if(/redirect.*not allowed|not whitelisted/i.test(message))return ar?'أضف عنوان التطبيق إلى قائمة Redirect URLs في إعدادات Supabase Auth.':'Add this app URL to Supabase Auth Redirect URLs.';
- if(/failed to fetch|network/i.test(message))return ar?'تعذر الاتصال بـ Supabase. تحقق من الإنترنت ورابط المشروع.':'Could not reach Supabase. Check your internet connection and project URL.';
- return message|| (ar?'تعذر إكمال الطلب.':'Could not complete the request.');
-}
-function oauthErrorMessage(error:unknown,ar:boolean){
- const message=error instanceof Error?error.message:'';
- if(/provider.*not enabled|unsupported provider/i.test(message))return ar?'تسجيل Google غير مفعّل في Supabase Auth بعد.':'Google sign-in is not enabled in Supabase Auth yet.';
- if(/redirect.*not allowed|not whitelisted/i.test(message))return ar?'أضف عنوان التطبيق إلى Redirect URLs في إعدادات Supabase Auth.':'Add this app URL to Supabase Auth Redirect URLs.';
- if(/access_denied|cancel/i.test(message))return ar?'تم إلغاء تسجيل الدخول.':'Sign-in was cancelled.';
- return message|| (ar?'تعذر الاتصال بـ Google. تحقق من إعداد المزوّد وحاول مجددًا.':'Could not connect to Google. Check the provider setup and try again.');
-}
+function authError(error:unknown,ar:boolean){const code=error&&typeof error==='object'&&'code'in error?String((error as {code?:unknown}).code??''):'';const message=error instanceof Error?error.message:'';if(code==='invalid_credentials')return ar?'البريد أو كلمة المرور غير صحيحة.':'Email or password is incorrect.';if(code==='email_not_confirmed')return ar?'أكد بريدك أولًا. أرسلنا رسالة التأكيد إلى بريدك.':'Confirm your email first. A confirmation email was sent.';if(code==='weak_password')return ar?'كلمة المرور ضعيفة؛ اختر كلمة أقوى.':'Password is too weak; choose a stronger password.';if(code==='user_already_exists')return ar?'هذا البريد مسجل. سجّل الدخول أو استعد كلمة المرور.':'This email is already registered. Sign in or reset your password.';if(code==='over_email_send_rate_limit'||/rate limit/i.test(message))return ar?'طلبات البريد كثيرة. انتظر قليلًا ثم حاول مجددًا.':'Too many email requests. Wait a little and try again.';if(/email address not authorized/i.test(message))return ar?'إرسال Supabase التجريبي محدود. فعّل SMTP مخصصًا لإرسال البريد للمستخدمين.':'Supabase test email delivery is limited. Configure custom SMTP to email users.';if(/redirect.*not allowed|not whitelisted/i.test(message))return ar?'أضف عنوان الموقع إلى قائمة Redirect URLs في Supabase Auth.':'Add the site URL to Supabase Auth Redirect URLs.';if(/failed to fetch|network/i.test(message))return ar?'تعذر الاتصال. تحقق من الإنترنت وإعداد Supabase.':'Could not connect. Check your internet and Supabase settings.';return message|| (ar?'تعذر إكمال العملية.':'Could not complete the request.');}
